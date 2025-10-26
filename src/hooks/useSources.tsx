@@ -17,18 +17,42 @@ export const useSources = (notebookId?: string) => {
   } = useQuery({
     queryKey: ['sources', notebookId],
     queryFn: async () => {
-      if (!notebookId) return [];
-      
+      if (!notebookId) {
+        console.log('[useSources] No notebookId provided, returning empty array');
+        return [];
+      }
+
+      console.log('[useSources] Fetching sources for notebook:', notebookId);
+
       const { data, error } = await supabase
         .from('sources')
         .select('*')
         .eq('notebook_id', notebookId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useSources] Error fetching sources:', error);
+        console.error('[useSources] Error details:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+
+      console.log('[useSources] Successfully fetched sources:', data?.length || 0);
       return data;
     },
-    enabled: !!notebookId,
+    enabled: !!notebookId && !!user,
+    retry: (failureCount, error) => {
+      console.log('[useSources] Query retry attempt:', failureCount, 'Error:', error?.message);
+      if (error?.message?.includes('JWT') || error?.message?.includes('auth')) {
+        console.log('[useSources] Auth error detected, not retrying');
+        return false;
+      }
+      return failureCount < 3;
+    },
   });
 
   // Set up Realtime subscription for sources table

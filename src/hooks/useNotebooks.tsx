@@ -17,11 +17,11 @@ export const useNotebooks = () => {
     queryKey: ['notebooks', user?.id],
     queryFn: async () => {
       if (!user) {
-        console.log('No user found, returning empty notebooks array');
+        console.log('[useNotebooks] No user found, returning empty notebooks array');
         return [];
       }
-      
-      console.log('Fetching notebooks for user:', user.id);
+
+      console.log('[useNotebooks] Fetching notebooks for user:', user.id);
       
       // First get the notebooks
       const { data: notebooksData, error: notebooksError } = await supabase
@@ -31,7 +31,13 @@ export const useNotebooks = () => {
         .order('updated_at', { ascending: false });
 
       if (notebooksError) {
-        console.error('Error fetching notebooks:', notebooksError);
+        console.error('[useNotebooks] Error fetching notebooks:', notebooksError);
+        console.error('[useNotebooks] Error details:', {
+          message: notebooksError.message,
+          code: notebooksError.code,
+          details: notebooksError.details,
+          hint: notebooksError.hint
+        });
         throw notebooksError;
       }
 
@@ -44,7 +50,7 @@ export const useNotebooks = () => {
             .eq('notebook_id', notebook.id);
 
           if (countError) {
-            console.error('Error fetching source count for notebook:', notebook.id, countError);
+            console.error('[useNotebooks] Error fetching source count for notebook:', notebook.id, countError);
             return { ...notebook, sources: [{ count: 0 }] };
           }
 
@@ -52,13 +58,14 @@ export const useNotebooks = () => {
         })
       );
 
-      console.log('Fetched notebooks:', notebooksWithCounts?.length || 0);
+      console.log('[useNotebooks] Successfully fetched notebooks:', notebooksWithCounts?.length || 0);
       return notebooksWithCounts || [];
     },
     enabled: isAuthenticated && !authLoading,
     retry: (failureCount, error) => {
-      // Don't retry on auth errors
+      console.log('[useNotebooks] Query retry attempt:', failureCount, 'Error:', error?.message);
       if (error?.message?.includes('JWT') || error?.message?.includes('auth')) {
+        console.log('[useNotebooks] Auth error detected, not retrying');
         return false;
       }
       return failureCount < 3;

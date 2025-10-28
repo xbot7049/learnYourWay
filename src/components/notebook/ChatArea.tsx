@@ -7,10 +7,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from '@/components/ui/carousel';
 import { useChatMessages } from '@/hooks/useChatMessages';
 import { useSources } from '@/hooks/useSources';
+import { useSourceMetadata } from '@/hooks/useSourceMetadata';
 import MarkdownRenderer from '@/components/chat/MarkdownRenderer';
 import SaveToNoteButton from './SaveToNoteButton';
 import AddSourcesDialog from './AddSourcesDialog';
 import { Citation } from '@/types/message';
+import { parseTextForCitations, hasUuidCitations } from '@/lib/citationParser';
 
 interface ChatAreaProps {
   hasSource: boolean;
@@ -51,6 +53,19 @@ const ChatArea = ({
   const {
     sources
   } = useSources(notebookId);
+
+  const allSourceIds = React.useMemo(() => {
+    const ids: string[] = [];
+    messages.forEach(msg => {
+      if (typeof msg.message.content === 'string' && hasUuidCitations(msg.message.content)) {
+        const parsed = parseTextForCitations(msg.message.content);
+        ids.push(...parsed.sourceIds);
+      }
+    });
+    return [...new Set(ids)];
+  }, [messages]);
+
+  const { sourceMetadataMap } = useSourceMetadata(notebookId, allSourceIds.length > 0 ? allSourceIds : undefined);
   
   const sourceCount = sources?.length || 0;
 
@@ -123,7 +138,11 @@ const ChatArea = ({
     }
   };
   const handleCitationClick = (citation: Citation) => {
-    onCitationClick?.(citation);
+    const enrichedCitation: Citation = {
+      ...citation,
+      excerpt: sourceMetadataMap?.get(citation.source_id)?.content || citation.excerpt
+    };
+    onCitationClick?.(enrichedCitation);
   };
   const handleExampleQuestionClick = (question: string) => {
     // Add question to clicked set to remove it from display
@@ -207,7 +226,14 @@ const ChatArea = ({
                     {messages.map((msg, index) => <div key={msg.id} className={`flex ${isUserMessage(msg) ? 'justify-end' : 'justify-start'}`}>
                         <div className={`${isUserMessage(msg) ? 'max-w-xs lg:max-w-md px-4 py-2 bg-blue-500 text-white rounded-lg' : 'w-full'}`}>
                           <div className={isUserMessage(msg) ? '' : 'prose prose-gray max-w-none text-gray-800'}>
-                            <MarkdownRenderer content={msg.message.content} className={isUserMessage(msg) ? '' : ''} onCitationClick={handleCitationClick} isUserMessage={isUserMessage(msg)} />
+                            <MarkdownRenderer
+                              content={msg.message.content}
+                              className={isUserMessage(msg) ? '' : ''}
+                              onCitationClick={handleCitationClick}
+                              isUserMessage={isUserMessage(msg)}
+                              notebookId={notebookId}
+                              sourceMetadata={sourceMetadataMap}
+                            />
                           </div>
                           {isAiMessage(msg) && <div className="mt-2 flex justify-start">
                               <SaveToNoteButton content={msg.message.content} notebookId={notebookId} />
@@ -218,7 +244,13 @@ const ChatArea = ({
                     {/* Pending user message */}
                     {pendingUserMessage && <div className="flex justify-end">
                         <div className="max-w-xs lg:max-w-md px-4 py-2 bg-blue-500 text-white rounded-lg">
-                          <MarkdownRenderer content={pendingUserMessage} className="" isUserMessage={true} />
+                          <MarkdownRenderer
+                            content={pendingUserMessage}
+                            className=""
+                            isUserMessage={true}
+                            notebookId={notebookId}
+                            sourceMetadata={sourceMetadataMap}
+                          />
                         </div>
                       </div>}
                     

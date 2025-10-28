@@ -194,7 +194,9 @@ const SourcesSidebar = ({
 
     // Determine which citation to display and get appropriate content/summary/url
     const displayCitation = selectedCitation;
-    const sourceContent = selectedSourceForViewing ? getSelectedSourceContent() : getSourceContent(selectedCitation);
+    const sourceContent = selectedSourceForViewing
+      ? getSelectedSourceContent()
+      : (selectedCitation.excerpt || getSourceContent(selectedCitation));
     const sourceSummary = selectedSourceForViewing ? getSelectedSourceSummary() : getSourceSummary(selectedCitation);
     const sourceUrl = selectedSourceForViewing ? getSelectedSourceUrl() : getSourceUrl(selectedCitation);
 

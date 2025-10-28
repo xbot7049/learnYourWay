@@ -2,41 +2,134 @@
 import React from 'react';
 import { MessageSegment, Citation } from '@/types/message';
 import CitationButton from './CitationButton';
+import { parseTextForCitations, hasUuidCitations } from '@/lib/citationParser';
 
 interface MarkdownRendererProps {
   content: string | { segments: MessageSegment[]; citations: Citation[] };
   className?: string;
   onCitationClick?: (citation: Citation) => void;
   isUserMessage?: boolean;
+  notebookId?: string;
+  sourceMetadata?: Map<string, { title: string; type: string; content: string; summary: string; url: string }> | null;
 }
 
-const MarkdownRenderer = ({ content, className = '', onCitationClick, isUserMessage = false }: MarkdownRendererProps) => {
+const MarkdownRenderer = ({ content, className = '', onCitationClick, isUserMessage = false, notebookId, sourceMetadata }: MarkdownRendererProps) => {
   // Handle enhanced content with citations
   if (typeof content === 'object' && 'segments' in content) {
     return (
       <div className={className}>
-        {processMarkdownWithCitations(content.segments, content.citations, onCitationClick, isUserMessage)}
+        {processMarkdownWithCitations(content.segments, content.citations, onCitationClick, isUserMessage, sourceMetadata)}
       </div>
     );
   }
 
-  // For legacy string content, convert to simple format
-  const segments: MessageSegment[] = [{ text: typeof content === 'string' ? content : '' }];
+  // For string content, check if it contains UUID citations
+  const stringContent = typeof content === 'string' ? content : '';
+
+  if (hasUuidCitations(stringContent) && onCitationClick && sourceMetadata) {
+    const parsed = parseTextForCitations(stringContent);
+    const uuidCitations: Citation[] = parsed.citations.map(c => {
+      const source = sourceMetadata.get(c.uuid);
+      return {
+        citation_id: c.citationNumber,
+        source_id: c.uuid,
+        source_title: source?.title || 'Unknown Source',
+        source_type: source?.type || 'text',
+        chunk_index: c.citationNumber - 1
+      };
+    });
+
+    const segments: MessageSegment[] = parsed.segments.map(seg => ({
+      text: seg.text,
+      citation_id: seg.citationNumber
+    }));
+
+    return (
+      <div className={className}>
+        {processMarkdownWithUuidCitations(segments, uuidCitations, onCitationClick, isUserMessage, sourceMetadata)}
+      </div>
+    );
+  }
+
+  // For legacy string content without UUID citations, convert to simple format
+  const segments: MessageSegment[] = [{ text: stringContent }];
   const citations: Citation[] = [];
-  
+
   return (
     <div className={className}>
-      {processMarkdownWithCitations(segments, citations, onCitationClick, isUserMessage)}
+      {processMarkdownWithCitations(segments, citations, onCitationClick, isUserMessage, sourceMetadata)}
+    </div>
+  );
+};
+
+// Function to process markdown with UUID-based citations
+const processMarkdownWithUuidCitations = (
+  segments: MessageSegment[],
+  citations: Citation[],
+  onCitationClick: (citation: Citation) => void,
+  isUserMessage: boolean,
+  sourceMetadata: Map<string, { title: string; type: string; content: string; summary: string; url: string }> | null | undefined
+) => {
+  if (isUserMessage) {
+    return (
+      <span>
+        {segments.map((segment, index) => {
+          const citation = segment.citation_id ? citations.find(c => c.citation_id === segment.citation_id) : undefined;
+          return (
+            <span key={index}>
+              {processInlineMarkdown(segment.text)}
+              {citation && (
+                <button
+                  onClick={() => onCitationClick(citation)}
+                  className="inline-flex items-center text-blue-600 hover:text-blue-800 hover:underline font-medium cursor-pointer ml-0.5"
+                >
+                  {segment.text}
+                </button>
+              )}
+            </span>
+          );
+        })}
+      </span>
+    );
+  }
+
+  return (
+    <div>
+      {segments.map((segment, index) => {
+        const citation = segment.citation_id ? citations.find(c => c.citation_id === segment.citation_id) : undefined;
+
+        if (citation) {
+          return (
+            <span key={index}>
+              {processTextWithMarkdown(segment.text.replace(/\[\d+\]/, ''))}
+              <button
+                onClick={() => onCitationClick(citation)}
+                className="inline-flex items-center text-blue-600 hover:text-blue-800 hover:underline font-medium cursor-pointer ml-1 text-sm"
+                title={`View source: ${citation.source_title}`}
+              >
+                [{citation.citation_id}]
+              </button>
+            </span>
+          );
+        }
+
+        return (
+          <span key={index}>
+            {processTextWithMarkdown(segment.text)}
+          </span>
+        );
+      })}
     </div>
   );
 };
 
 // Function to process markdown with citations inline
 const processMarkdownWithCitations = (
-  segments: MessageSegment[], 
-  citations: Citation[], 
+  segments: MessageSegment[],
+  citations: Citation[],
   onCitationClick?: (citation: Citation) => void,
-  isUserMessage: boolean = false
+  isUserMessage: boolean = false,
+  sourceMetadata?: Map<string, { title: string; type: string; content: string; summary: string; url: string }> | null
 ) => {
   // For user messages, render as inline content without paragraph breaks
   if (isUserMessage) {
